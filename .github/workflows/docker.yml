@@ -13,7 +13,6 @@ on:
 
 jobs:
   docker-build-deploy:
-    if: github.repository == 'Pumpkin-MC/Pumpkin'
     permissions:
       contents: read
       packages: write
@@ -28,7 +27,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux/amd64
 
-    runs-on: ${{matrix.os}}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && fromJSON('["self-hosted","Linux","X64"]') || matrix.os }}
 
     steps:
       - name: Set lowercase repository name
@@ -86,13 +85,12 @@ jobs:
           retention-days: 1
 
   merge:
-    if: github.repository == 'Pumpkin-MC/Pumpkin'
     permissions:
       contents: read
       packages: write
       attestations: write
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     needs:
       - docker-build-deploy
     steps:

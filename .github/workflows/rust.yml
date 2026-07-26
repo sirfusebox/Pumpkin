@@ -12,7 +12,7 @@ env:
 jobs:
   format:
     name: Check formatting
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     strategy:
       matrix:
         toolchain:
@@ -27,7 +27,7 @@ jobs:
       - run: cargo fmt --check
   machete:
     name: Detect unused dependencies
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     needs: [format]
     strategy:
       matrix:
@@ -41,7 +41,7 @@ jobs:
       - uses: bnjbvr/cargo-machete@main
   clippy_debug:
     name: Run lints (debug)
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     needs: [machete]
     strategy:
       matrix:
@@ -58,7 +58,7 @@ jobs:
         run: cargo clippy --all-targets --all-features
   clippy_release:
     name: Run lints (release)
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     needs: [machete]
     strategy:
       matrix:
@@ -75,7 +75,7 @@ jobs:
         run: cargo clippy --release --all-targets --all-features
   build_and_test:
     name: Build project and test
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || matrix.os }}
     needs: [clippy_debug, clippy_release]
     strategy:
       matrix:
@@ -102,7 +102,7 @@ jobs:
         run: cargo test --doc --verbose
   build_release:
     name: Build project in release
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || matrix.os }}
     needs: [build_and_test]
     strategy:
       matrix:
@@ -173,7 +173,7 @@ jobs:
   build_release_musl:
     name: Build release (musl, for Alpine-based egg installs)
     needs: [build_and_test]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || matrix.os }}
     container: rust:1-alpine3.23
     strategy:
       matrix:
@@ -227,7 +227,7 @@ jobs:
     permissions:
       contents: write
     needs: [build_release, build_release_musl]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name != 'pull_request' && fromJSON('["self-hosted","Linux","X64"]') || 'ubuntu-latest' }}
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       - uses: actions/checkout@v7
