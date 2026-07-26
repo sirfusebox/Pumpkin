@@ -17,7 +17,7 @@ jobs:
       - name: Extract egg installation script
         run: |
           jq -r '.scripts.installation.container' egg-pumpkin.json > egg_container.txt
-          jq -r '.scripts.installation.script' egg-pumpkin.json > egg_install.sh
+          jq -r '.scripts.installation.script' egg-pumpkin.json | tr -d '\r' > egg_install.sh
           chmod +x egg_install.sh
           echo "Egg install container: $(cat egg_container.txt)"
 
