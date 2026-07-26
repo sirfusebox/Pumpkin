@@ -7,27 +7,67 @@
     "exported_at": "2026-02-10T08:07:42+00:00",
     "name": "Pumpkin",
     "author": "lilalexmed@proton.me",
-    "description": "Pumpkin is a Minecraft server built entirely in Rust, offering a fast, efficient, and customizable experience. It prioritizes performance and player enjoyment while adhering to the core mechanics of the game. Requires around 4GB RAM to build, adjust docker.installer_limits.memory to a value of 4096 or above in your wing accordingly! For faster builds consider increasing docker.installer_limits.cpu as well.",
+    "description": "Pumpkin is a Minecraft server built entirely in Rust, offering a fast, efficient, and customizable experience. It prioritizes performance and player enjoyment while adhering to the core mechanics of the game. By default the installer downloads a prebuilt binary (near-instant install, no compiling). Building from source (needed for forks/custom branches/commits, or if you set Install mode to 'source') still requires around 4GB RAM; adjust docker.installer_limits.memory to a value of 4096 or above and consider increasing docker.installer_limits.cpu for faster builds.",
     "features": null,
     "docker_images": {
-        "Alpine": "ghcr.io\/pterodactyl\/yolks:alpine"
+        "Alpine": "ghcr.io/pterodactyl/yolks:alpine"
     },
     "file_denylist": [],
-    "startup": ".\/pumpkin",
+    "startup": "./pumpkin",
     "config": {
-        "files": "{\r\n    \"config\/configuration.toml\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"java_edition_address\": \"java_edition_address = '0.0.0.0:{{server.build.default.port}}'\"\r\n        }\r\n    },\r\n    \"config\/features.toml\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"address\": \"address = '0.0.0.0:{{server.build.default.port}}'\"\r\n        }\r\n    }\r\n}",
+        "files": "{\r\n    \"config/configuration.toml\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"java_edition_address\": \"java_edition_address = '0.0.0.0:{{server.build.default.port}}'\"\r\n        }\r\n    },\r\n    \"config/features.toml\": {\r\n        \"parser\": \"file\",\r\n        \"find\": {\r\n            \"address\": \"address = '0.0.0.0:{{server.build.default.port}}'\"\r\n        }\r\n    }\r\n}",
         "startup": "{\r\n    \"done\": \"Server is now running.\"\r\n}",
         "logs": "{}",
         "stop": "stop"
     },
     "scripts": {
         "installation": {
-            "script": "#!\/bin\/ash\r\nset -eux\r\n\r\napk add --no-cache musl-dev git\r\nmkdir -p \/mnt\/server\r\n\r\nREPO_URL=\"${GIT_URL:-https:\/\/github.com\/Pumpkin-MC\/Pumpkin.git}\"\r\n\r\nif [ -n \"$GIT_BRANCH\" ]; then\r\n    git clone --depth 1 --single-branch --branch \"$GIT_BRANCH\" \"$REPO_URL\"\r\nelse\r\n    git clone --depth 1 --single-branch \"$REPO_URL\"\r\nfi\r\n\r\ncd Pumpkin\r\n\r\nif [ -n \"$GIT_COMMIT\" ]; then\r\n    git fetch --depth 1 origin \"$GIT_COMMIT\"\r\n    git checkout \"$GIT_COMMIT\"\r\nfi\r\n\r\ngit submodule update --init --recursive --depth 1\r\n\r\n#export RUSTFLAGS=\"-C target-feature=-crt-static -C target-cpu=native\"\r\nexport CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-default}\r\n\r\nif [[ \"$BUILD_RELEASE\" == \"1\" || \"$BUILD_RELEASE\" == \"true\" ]]; then\r\n    cargo build --release\r\n    strip target\/release\/pumpkin\r\n    cp target\/release\/pumpkin \/mnt\/server\/pumpkin\r\nelse\r\n    cargo build\r\n    cp target\/debug\/pumpkin \/mnt\/server\/pumpkin\r\nfi\r\n\r\n# Quickly start and kill server to generate config\r\ncd \/mnt\/server\r\ntimeout 1 .\/pumpkin",
-            "container": "docker.io\/rust:1-alpine3.21",
+            "script": "#!/bin/ash\nset -eux\n\napk add --no-cache musl-dev git wget\nmkdir -p /mnt/server\n\nREPO_URL=\"${GIT_URL:-https://github.com/Pumpkin-MC/Pumpkin.git}\"\nRELEASE_TAG=\"${RELEASE_TAG:-nightly}\"\nINSTALL_MODE=\"${INSTALL_MODE:-prebuilt}\"\n\nUSE_PREBUILT=0\nif [ \"$INSTALL_MODE\" = \"prebuilt\" ] && [ -z \"$GIT_URL\" ] && [ -z \"$GIT_BRANCH\" ] && [ -z \"$GIT_COMMIT\" ]; then\n    USE_PREBUILT=1\nfi\n\nif [ \"$USE_PREBUILT\" = \"1\" ]; then\n    ARCH=\"$(uname -m)\"\n    case \"$ARCH\" in\n        x86_64)\n            ASSET=\"pumpkin-x86_64-linux-musl\"\n            if grep -qw avx2 /proc/cpuinfo && grep -qw bmi2 /proc/cpuinfo && grep -qw fma /proc/cpuinfo && grep -qw movbe /proc/cpuinfo && grep -qw f16c /proc/cpuinfo && grep -qw lzcnt /proc/cpuinfo; then\n                ASSET=\"pumpkin-x86_64-v3-linux-musl\"\n            fi\n            ;;\n        aarch64)\n            ASSET=\"pumpkin-aarch64-linux-musl\"\n            ;;\n        *)\n            echo \"Unsupported architecture for prebuilt binaries: $ARCH, falling back to source build\"\n            USE_PREBUILT=0\n            ;;\n    esac\nfi\n\nif [ \"$USE_PREBUILT\" = \"1\" ]; then\n    BASE_URL=\"https://github.com/Pumpkin-MC/Pumpkin/releases/download/${RELEASE_TAG}\"\n    if wget -q -O \"/tmp/${ASSET}\" \"${BASE_URL}/${ASSET}\" && wget -q -O \"/tmp/${ASSET}.sha256\" \"${BASE_URL}/${ASSET}.sha256\"; then\n        if ( cd /tmp && sha256sum -c \"${ASSET}.sha256\" ); then\n            chmod +x \"/tmp/${ASSET}\"\n            cp \"/tmp/${ASSET}\" /mnt/server/pumpkin\n        else\n            echo \"Checksum verification failed for prebuilt binary, falling back to source build\"\n            USE_PREBUILT=0\n        fi\n    else\n        echo \"Failed to download prebuilt binary, falling back to source build\"\n        USE_PREBUILT=0\n    fi\nfi\n\nif [ \"$USE_PREBUILT\" != \"1\" ]; then\n    if [ -n \"$GIT_BRANCH\" ]; then\n        git clone --depth 1 --single-branch --branch \"$GIT_BRANCH\" \"$REPO_URL\"\n    else\n        git clone --depth 1 --single-branch \"$REPO_URL\"\n    fi\n\n    cd Pumpkin\n\n    if [ -n \"$GIT_COMMIT\" ]; then\n        git fetch --depth 1 origin \"$GIT_COMMIT\"\n        git checkout \"$GIT_COMMIT\"\n    fi\n\n    git submodule update --init --recursive --depth 1\n\n    if [ -n \"$RUST_TARGET_CPU\" ]; then\n        export RUSTFLAGS=\"-C target-feature=-crt-static -C target-cpu=${RUST_TARGET_CPU}\"\n    fi\n\n    if [ \"$FAST_BUILD\" = \"1\" ] || [ \"$FAST_BUILD\" = \"true\" ]; then\n        export CARGO_PROFILE_RELEASE_LTO=off\n        export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16\n    fi\n\n    export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-default}\n\n    if [[ \"$BUILD_RELEASE\" == \"1\" || \"$BUILD_RELEASE\" == \"true\" ]]; then\n        cargo build --release\n        strip target/release/pumpkin\n        cp target/release/pumpkin /mnt/server/pumpkin\n    else\n        cargo build\n        cp target/debug/pumpkin /mnt/server/pumpkin\n    fi\nfi\n\n# Quickly start and kill server to generate config\ncd /mnt/server\ntimeout 1 ./pumpkin",
+            "container": "docker.io/rust:1-alpine3.21",
             "entrypoint": "ash"
         }
     },
     "variables": [
+        {
+            "name": "Install mode",
+            "description": "\"prebuilt\" -> Download a prebuilt binary matching your CPU (fast, no compiling). Automatically falls back to a source build if no matching asset is found or download fails.\r\n\"source\" -> Always compile from source (required if you set a Git URL/branch/commit; also happens automatically in that case regardless of this setting).\r\nScope: installation",
+            "env_variable": "INSTALL_MODE",
+            "default_value": "prebuilt",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|in:prebuilt,source",
+            "field_type": "text"
+        },
+        {
+            "name": "Release tag",
+            "description": "Which GitHub release tag to download the prebuilt binary from. Only used when Install mode is \"prebuilt\".\r\nScope: installation",
+            "env_variable": "RELEASE_TAG",
+            "default_value": "nightly",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        },
+        {
+            "name": "Rust target CPU",
+            "description": "Optional -C target-cpu value (e.g. \"x86-64-v3\", \"native\") used only for source builds, to produce a faster binary tuned for this CPU. Leave empty for a safe, portable baseline build. Warning: \"native\" (or a mismatched value) can produce a binary that crashes if the server later runs on different hardware than it was built on.\r\nScope: installation",
+            "env_variable": "RUST_TARGET_CPU",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Fast build",
+            "description": "Only used for source builds. When enabled, relaxes LTO/codegen-unit settings for this build only (via CARGO_PROFILE_RELEASE_* overrides) to cut compile time significantly, at a small runtime performance cost. Does not affect prebuilt installs.\r\nScope: installation",
+            "env_variable": "FAST_BUILD",
+            "default_value": "0",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
         {
             "name": "Rust backtrace",
             "description": "\"0\" -> No backtrace is generated. This is the default behavior.\r\n\"1\" -> Generates a minimal backtrace showing only relevant information about where the panic occurred.\r\n\"full\" -> Generates a detailed backtrace, showing all frames leading to the panic, including functions in the Rust standard library and dependencies.",

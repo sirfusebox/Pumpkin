@@ -170,10 +170,63 @@ jobs:
           name: pumpkin-${{ runner.arch }}-${{ runner.os }}
           compression-level: 9
           path: dist/pumpkin-*
+  build_release_musl:
+    name: Build release (musl, for Alpine-based egg installs)
+    needs: [build_and_test]
+    runs-on: ${{ matrix.os }}
+    container: rust:1-alpine3.23
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - name: Install build dependencies
+        run: apk add --no-cache musl-dev git
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: musl-${{ matrix.arch }}
+
+      - name: Build release (baseline, x86-64-v1 / generic aarch64)
+        run: cargo build --verbose --release
+
+      - name: Build release (x86-64-v3)
+        if: matrix.arch == 'x86_64'
+        env:
+          RUSTFLAGS: "-C target-cpu=x86-64-v3"
+          CARGO_TARGET_DIR: target-v3
+        run: cargo build --verbose --release
+
+      - name: Prepare artifacts
+        shell: sh
+        run: |
+          mkdir -p dist
+          cp target/release/pumpkin "dist/pumpkin-${{ matrix.arch }}-linux-musl"
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            cp target-v3/release/pumpkin "dist/pumpkin-${{ matrix.arch }}-v3-linux-musl"
+          fi
+          cd dist
+          for f in pumpkin-*; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - name: Export executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: pumpkin-musl-${{ matrix.arch }}
+          compression-level: 9
+          path: dist/pumpkin-*
   draft_release:
     permissions:
       contents: write
-    needs: [build_release]
+    needs: [build_release, build_release_musl]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
