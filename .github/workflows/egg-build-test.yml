@@ -1,0 +1,47 @@
+name: Test Pterodactyl Egg Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "claude/egg-build-github-actions-test-n1qlhf"
+
+jobs:
+  egg-build-test:
+    name: Build Pumpkin via egg-pumpkin.json install script
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Extract egg installation script
+        run: |
+          jq -r '.scripts.installation.container' egg-pumpkin.json > egg_container.txt
+          jq -r '.scripts.installation.script' egg-pumpkin.json > egg_install.sh
+          chmod +x egg_install.sh
+          echo "Egg install container: $(cat egg_container.txt)"
+
+      - name: Run egg installation script in its declared container
+        run: |
+          mkdir -p egg-output
+          docker run --rm \
+            -e GIT_URL="https://github.com/${{ github.repository }}.git" \
+            -e GIT_BRANCH="${{ github.ref_name }}" \
+            -e GIT_COMMIT="${{ github.sha }}" \
+            -e BUILD_RELEASE="1" \
+            -e CARGO_BUILD_JOBS="default" \
+            -v "${{ github.workspace }}/egg-output:/mnt/server" \
+            -v "${{ github.workspace }}/egg_install.sh:/install.sh:ro" \
+            --entrypoint ash \
+            "$(cat egg_container.txt)" \
+            /install.sh
+
+      - name: Show build output
+        run: ls -lh egg-output/
+
+      - name: Upload built egg binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: egg-pumpkin-binary
+          path: egg-output/
+          retention-days: 7
