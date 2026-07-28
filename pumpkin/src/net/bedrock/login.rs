@@ -177,12 +177,27 @@ impl BedrockClient {
             .map_err(|_| LoginError::DecodeExtraError)?;
         let client_data: ClientData = serde_json::from_slice(&payload_bytes)?;
 
-        let real_name = player_data.display_name;
+        // Clients that aren't signed into Xbox Live have no `xname`/`xid` claim, so
+        // `player_data.display_name` comes back empty and `player_data.uuid` collapses to the
+        // same fixed hash for every such client. Fall back to the client-supplied third-party
+        // name/UUID in that case instead of broadcasting a blank, colliding identity.
+        let (real_name, uuid) = if player_data.display_name.is_empty() {
+            (
+                client_data.third_party_name.clone(),
+                crate::net::offline_uuid(&client_data.third_party_name)
+                    .map_err(|_| LoginError::InvalidUuid)?,
+            )
+        } else {
+            (
+                player_data.display_name,
+                Uuid::parse_str(&player_data.uuid).map_err(|_| LoginError::InvalidUuid)?,
+            )
+        };
         // IMPORTANT: Bedrock allows spaces in names. While we could support this, it would significantly complicate parsing player arguments in commands, so we don't
         let under_score_name = real_name.replace(' ', "_");
 
         let profile = GameProfile {
-            id: Uuid::parse_str(&player_data.uuid).map_err(|_| LoginError::InvalidUuid)?,
+            id: uuid,
             name: under_score_name,
             properties: ArcSwap::new(Arc::new(Vec::new())),
             profile_actions: None,
@@ -254,6 +269,8 @@ impl BedrockClient {
 
             let new_config = PlayerConfig {
                 locale: client_data.language_code.clone(),
+                // Bedrock has no client packet to toggle this, so default to listed.
+                server_listing: true,
                 ..Default::default()
             };
             self.client_data
@@ -297,6 +314,8 @@ impl BedrockClient {
 
         let new_config = PlayerConfig {
             locale: client_data.language_code.clone(),
+            // Bedrock has no client packet to toggle this, so default to listed.
+            server_listing: true,
             ..Default::default()
         };
 

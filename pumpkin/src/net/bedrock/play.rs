@@ -1035,21 +1035,19 @@ impl BedrockClient {
                 );
 
                 let entity = &player.get_entity();
-                if server.basic_config.allow_chat_reports {
-                    //TODO Alex help, what is this?
-                    //world.broadcast_secure_player_chat(player, &message, decorated_message).await;
-                } else {
-                    let je_packet = CSystemChatMessage::new(
-                        &decorated_message,
-                        false,
-                    );
+                // Bedrock clients cannot produce Mojang-signed chat certificates, so there is no
+                // secure-chat path for them here; always broadcast plainly regardless of
+                // `allow_chat_reports`.
+                let je_packet = CSystemChatMessage::new(
+                    &decorated_message,
+                    false,
+                );
 
-                    let be_packet = SText::new(
-                        message, gameprofile.name.clone()
-                    );
+                let be_packet = SText::new(
+                    message, gameprofile.name.clone()
+                );
 
-                    entity.world.load().broadcast_editioned(&je_packet, &be_packet).await;
-                }
+                entity.world.load().broadcast_editioned(&je_packet, &be_packet).await;
             }
         }}
     }
